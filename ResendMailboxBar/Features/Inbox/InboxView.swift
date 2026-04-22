@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InboxView: View {
     @Bindable var appState: AppState
+    let notificationOpenRouter: NotificationOpenRouter
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -52,6 +53,15 @@ struct InboxView: View {
         .task {
             if appState.hasMailboxes, appState.emailSummaries.isEmpty {
                 await appState.refreshAllMailboxes(userInitiated: false)
+            }
+        }
+        .onChange(of: notificationOpenRouter.pendingPayload, initial: true) { _, payload in
+            guard let payload else { return }
+            guard notificationOpenRouter.consume(payload) else { return }
+            openWindow(id: WindowID.main)
+            NSApp.activate(ignoringOtherApps: true)
+            Task {
+                await appState.openReceivedEmail(mailboxID: payload.mailboxID, emailID: payload.emailID)
             }
         }
     }

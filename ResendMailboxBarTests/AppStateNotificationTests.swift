@@ -6,6 +6,17 @@ import Testing
 @Suite(.serialized)
 struct AppStateNotificationTests {
     @Test
+    func notificationRoutePayloadRoundTripsThroughUserInfo() {
+        let payload = NotificationRoutePayload(mailboxID: UUID(), emailID: "msg_42")
+
+        let decoded = NotificationRoutePayload(userInfo: payload.userInfo)
+
+        #expect(decoded == payload)
+        #expect((payload.userInfo[NotificationRoutePayload.mailboxIDKey] as? String) == payload.mailboxID.uuidString)
+        #expect((payload.userInfo[NotificationRoutePayload.emailIDKey] as? String) == payload.emailID)
+    }
+
+    @Test
     func startupBacklogNotificationsPersistNotifiedIDs() async throws {
         let received = try makeListResponse(emails: [
             makeEmailJSON(id: "msg_3", subject: "Third", createdAt: "2026-04-03T22:15:42.674981+00:00"),
@@ -106,6 +117,24 @@ struct AppStateNotificationTests {
         #expect(!harness.appState.isRead("msg_1", mailboxID: harness.mailbox.id))
 
         await harness.appState.selectEmail(id: "msg_1")
+        #expect(harness.appState.isRead("msg_1", mailboxID: harness.mailbox.id))
+    }
+
+    @Test
+    func openReceivedEmailSwitchesFolderSelectsEmailAndMarksRead() async throws {
+        let detail = try makeDetailResponse(id: "msg_1", subject: "First")
+        let harness = try makeHarness(
+            responsesByPath: [
+                "/emails/receiving/msg_1": [detail],
+            ]
+        )
+
+        harness.appState.selectFolder(.sent)
+
+        await harness.appState.openReceivedEmail(mailboxID: harness.mailbox.id, emailID: "msg_1")
+
+        #expect(harness.appState.selectedFolder == .received)
+        #expect(harness.appState.selectedEmailID == "msg_1")
         #expect(harness.appState.isRead("msg_1", mailboxID: harness.mailbox.id))
     }
 }

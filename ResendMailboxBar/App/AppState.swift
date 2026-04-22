@@ -8,6 +8,39 @@ protocol NotificationManaging {
     func notifyNewReceivedEmails(_ emails: [ResendEmailSummary], mailbox: MailboxProfile) async
 }
 
+struct NotificationRoutePayload: Equatable {
+    static let mailboxIDKey = "mailboxID"
+    static let emailIDKey = "emailID"
+
+    let mailboxID: UUID
+    let emailID: String
+
+    init(mailboxID: UUID, emailID: String) {
+        self.mailboxID = mailboxID
+        self.emailID = emailID
+    }
+
+    init?(userInfo: [AnyHashable: Any]) {
+        guard
+            let mailboxIDValue = userInfo[Self.mailboxIDKey] as? String,
+            let mailboxID = UUID(uuidString: mailboxIDValue),
+            let emailID = userInfo[Self.emailIDKey] as? String,
+            !emailID.isEmpty
+        else {
+            return nil
+        }
+
+        self.init(mailboxID: mailboxID, emailID: emailID)
+    }
+
+    var userInfo: [AnyHashable: Any] {
+        [
+            Self.mailboxIDKey: mailboxID.uuidString,
+            Self.emailIDKey: emailID,
+        ]
+    }
+}
+
 /// How a refresh should interact with the notification tracking state.
 enum RefreshNotificationMode {
     /// Notify for any received email not yet notified (polling / background refresh).
@@ -224,6 +257,13 @@ final class AppState {
     func selectEmail(id: String?) async {
         selectedEmailID = id
         await loadSelectedEmailDetails(markReadOnSuccess: true)
+    }
+
+    func openReceivedEmail(mailboxID: UUID, emailID: String) async {
+        guard mailboxes.contains(where: { $0.id == mailboxID }) else { return }
+        selectMailbox(mailboxID)
+        selectFolder(.received)
+        await selectEmail(id: emailID)
     }
 
     func refreshAllMailboxes(userInitiated: Bool) async {
@@ -537,6 +577,7 @@ struct NotificationManager: NotificationManaging {
             content.subtitle = mailbox.name
             content.body = email.displayParticipants
             content.sound = .default
+            content.userInfo = NotificationRoutePayload(mailboxID: mailbox.id, emailID: email.id).userInfo
 
             let request = UNNotificationRequest(
                 identifier: "\(mailbox.id.uuidString)-\(email.id)",

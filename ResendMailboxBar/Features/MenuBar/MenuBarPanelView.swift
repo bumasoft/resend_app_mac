@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuBarPanelView: View {
     @Bindable var appState: AppState
+    let notificationOpenRouter: NotificationOpenRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
 
@@ -30,6 +31,15 @@ struct MenuBarPanelView: View {
         .padding(18)
         .frame(width: 380, height: 520)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: notificationOpenRouter.pendingPayload, initial: true) { _, payload in
+            guard let payload else { return }
+            guard notificationOpenRouter.consume(payload) else { return }
+            openMainWindowAndSelectReceivedEmail(
+                mailboxID: payload.mailboxID,
+                emailID: payload.emailID,
+                dismissPanel: false
+            )
+        }
     }
 
     private var header: some View {
@@ -231,13 +241,12 @@ struct MenuBarPanelView: View {
     }
 
     private func openEmailFromPanel(_ email: ResendEmailSummary) {
-        if let mailboxID = appState.selectedMailboxID {
-            appState.selectMailbox(mailboxID)
-        }
-        dismissMenuBarPanel()
-        openWindow(id: WindowID.main)
-        NSApp.activate(ignoringOtherApps: true)
-        Task { await appState.selectEmail(id: email.id) }
+        guard let mailboxID = appState.selectedMailboxID else { return }
+        openMainWindowAndSelectReceivedEmail(
+            mailboxID: mailboxID,
+            emailID: email.id,
+            dismissPanel: true
+        )
     }
 
     private func openMailboxWindowFromPanel() {
@@ -248,5 +257,20 @@ struct MenuBarPanelView: View {
 
     private func dismissMenuBarPanel() {
         dismiss()
+    }
+
+    private func openMainWindowAndSelectReceivedEmail(
+        mailboxID: UUID,
+        emailID: String,
+        dismissPanel: Bool
+    ) {
+        if dismissPanel {
+            dismissMenuBarPanel()
+        }
+        openWindow(id: WindowID.main)
+        NSApp.activate(ignoringOtherApps: true)
+        Task {
+            await appState.openReceivedEmail(mailboxID: mailboxID, emailID: emailID)
+        }
     }
 }
