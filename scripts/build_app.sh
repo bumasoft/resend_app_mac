@@ -57,6 +57,13 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
 PLIST
 
 printf 'APPL????' > "$CONTENTS_DIR/PkgInfo"
+
+# Re-sign the assembled bundle so the code-signing identifier matches
+# CFBundleIdentifier and Info.plist / Resources are sealed into the signature.
+# Without this, macOS can't positively identify the app and UNUserNotificationCenter
+# rejects authorization with "Notifications are not allowed for this application".
+codesign --force --deep --sign - --timestamp=none "$APP_DIR"
+
 touch "$APP_DIR"
 
 if [[ -x "$LSREGISTER" ]]; then

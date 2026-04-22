@@ -175,7 +175,7 @@ struct MailboxSettingsView: View {
             draft.id = savedID
             selectedMailboxID = savedID
             appState.selectMailbox(savedID)
-            await appState.refreshMailbox(mailboxID: savedID, notifyOnNewReceived: false)
+            await appState.refreshMailbox(mailboxID: savedID, mode: .markSeen)
             feedbackMessage = "Mailbox saved."
         } catch {
             feedbackMessage = error.localizedDescription

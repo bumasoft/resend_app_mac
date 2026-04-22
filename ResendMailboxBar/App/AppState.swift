@@ -8,6 +8,17 @@ protocol NotificationManaging {
     func notifyNewReceivedEmails(_ emails: [ResendEmailSummary], mailbox: MailboxProfile) async
 }
 
+/// How a refresh should interact with the notification tracking state.
+enum RefreshNotificationMode {
+    /// Notify for any received email not yet notified (polling / background refresh).
+    case notify
+    /// Don't notify, but treat current received emails as already-seen so they won't notify later
+    /// (e.g. user manually refreshed or opened a mailbox and is looking at the list).
+    case markSeen
+    /// Don't notify and don't modify seen tracking (side-effect refresh after send/cancel/etc.).
+    case ignore
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -196,7 +207,7 @@ final class AppState {
         syncVisibleState()
 
         if snapshots[mailboxID] == nil {
-            Task { await refreshMailbox(mailboxID: mailboxID, notifyOnNewReceived: false) }
+            Task { await refreshMailbox(mailboxID: mailboxID, mode: .markSeen) }
         }
     }
 
@@ -227,10 +238,11 @@ final class AppState {
         isRefreshing = true
         defer { isRefreshing = false }
 
+        let mode: RefreshNotificationMode = userInitiated ? .markSeen : .notify
         var firstErrorForSelection: String?
         for mailbox in mailboxes {
             do {
-                try await refreshSnapshot(for: mailbox, notifyOnNewReceived: !userInitiated)
+                try await refreshSnapshot(for: mailbox, mode: mode)
             } catch {
                 if mailbox.id == selectedMailboxID, firstErrorForSelection == nil {
                     firstErrorForSelection = error.localizedDescription
@@ -244,10 +256,10 @@ final class AppState {
         }
     }
 
-    func refreshMailbox(mailboxID: UUID, notifyOnNewReceived: Bool) async {
+    func refreshMailbox(mailboxID: UUID, mode: RefreshNotificationMode) async {
         guard let mailbox = mailboxes.first(where: { $0.id == mailboxID }) else { return }
         do {
-            try await refreshSnapshot(for: mailbox, notifyOnNewReceived: notifyOnNewReceived)
+            try await refreshSnapshot(for: mailbox, mode: mode)
             syncVisibleState()
         } catch {
             if mailboxID == selectedMailboxID {
@@ -274,7 +286,7 @@ final class AppState {
 
             _ = try await client.sendEmail(payload)
             composeDraft.reset()
-            await refreshMailbox(mailboxID: mailbox.id, notifyOnNewReceived: false)
+            await refreshMailbox(mailboxID: mailbox.id, mode: .ignore)
             return true
         } catch {
             present(error: error.localizedDescription)
@@ -312,7 +324,7 @@ final class AppState {
                 id: selectedEmailID,
                 scheduledAt: resendScheduleString(from: date)
             )
-            await refreshMailbox(mailboxID: mailbox.id, notifyOnNewReceived: false)
+            await refreshMailbox(mailboxID: mailbox.id, mode: .ignore)
             await loadSelectedEmailDetails()
         } catch {
             present(error: error.localizedDescription)
@@ -325,7 +337,7 @@ final class AppState {
         do {
             let client = try client(for: mailbox)
             _ = try await client.cancelScheduledEmail(id: selectedEmailID)
-            await refreshMailbox(mailboxID: mailbox.id, notifyOnNewReceived: false)
+            await refreshMailbox(mailboxID: mailbox.id, mode: .ignore)
             await loadSelectedEmailDetails()
         } catch {
             present(error: error.localizedDescription)
@@ -372,7 +384,7 @@ final class AppState {
         }
     }
 
-    private func refreshSnapshot(for mailbox: MailboxProfile, notifyOnNewReceived: Bool) async throws {
+    private func refreshSnapshot(for mailbox: MailboxProfile, mode: RefreshNotificationMode) async throws {
         let client = try client(for: mailbox)
 
         async let received = client.listEmails(in: .received)
@@ -385,13 +397,31 @@ final class AppState {
 
         let previousState = mailboxStore.state(for: mailbox.id)
         let previousSeenReceived = Set(previousState.lastSeenReceivedIDs)
+        let previouslyNotified = Set(previousState.notifiedReceivedIDs)
+
+        // UI "new" indicator: anything in the current snapshot that wasn't in the previous one.
         let newlyDiscoveredReceived = previousSeenReceived.isEmpty
             ? snapshot.received
             : snapshot.received.filter { !previousSeenReceived.contains($0.id) }
-        let notificationCandidates = newlyDiscoveredReceived.filter { !Set(previousState.notifiedReceivedIDs).contains($0.id) }
-        let emailsToNotify = notifyOnNewReceived
-            ? Array(notificationCandidates.prefix(Self.notificationBatchLimit))
-            : []
+
+        // Notification eligibility is gated solely by whether we've already notified for this ID.
+        // This avoids races where a side-effect refresh (e.g. after sending) quietly populates
+        // lastSeenReceivedIDs with a freshly arrived email and suppresses the next poll's notification.
+        let notificationCandidates = snapshot.received.filter { !previouslyNotified.contains($0.id) }
+
+        let emailsToNotify: [ResendEmailSummary]
+        let idsToMarkNotified: [String]
+        switch mode {
+        case .notify:
+            emailsToNotify = Array(notificationCandidates.prefix(Self.notificationBatchLimit))
+            idsToMarkNotified = emailsToNotify.map(\.id)
+        case .markSeen:
+            emailsToNotify = []
+            idsToMarkNotified = snapshot.received.map(\.id)
+        case .ignore:
+            emailsToNotify = []
+            idsToMarkNotified = []
+        }
 
         snapshots[mailbox.id] = snapshot
         newReceivedIDsByMailbox[mailbox.id] = Set(newlyDiscoveredReceived.map(\.id))
@@ -403,7 +433,7 @@ final class AppState {
             state.lastSeenSentIDs = snapshot.sent.map(\.id)
             state.notifiedReceivedIDs = Self.mergedIDs(
                 existing: state.notifiedReceivedIDs,
-                appending: emailsToNotify.map(\.id)
+                appending: idsToMarkNotified
             )
             state.cachedReceivedCount = snapshot.received.count
             state.cachedSentCount = snapshot.sent.count
@@ -412,7 +442,7 @@ final class AppState {
             }
         }
 
-        if notifyOnNewReceived, !emailsToNotify.isEmpty {
+        if !emailsToNotify.isEmpty {
             await notificationManager.notifyNewReceivedEmails(emailsToNotify, mailbox: mailbox)
         }
     }
