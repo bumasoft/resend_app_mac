@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuBarPanelView: View {
     @Bindable var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -246,15 +247,6 @@ struct MenuBarPanelView: View {
     }
 
     private func dismissMenuBarPanel() {
-        // MenuBarExtra in `.window` style presents its content inside a private
-        // NSPanel subclass whose type name contains "MenuBarExtraPanel".
-        // Closing it is the most reliable way to dismiss the popunder without
-        // waiting on system focus changes.
-        for window in NSApp.windows {
-            let typeName = String(describing: type(of: window))
-            if typeName.contains("MenuBarExtraPanel") || typeName.contains("NSStatusBarWindow") {
-                window.close()
-            }
-        }
+        dismiss()
     }
 }

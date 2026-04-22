@@ -17,7 +17,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ResendMailboxBar",
-            path: "ResendMailboxBar"
+            path: "ResendMailboxBar",
+            exclude: ["Resources/AppIcon.icns"]
         ),
         .testTarget(
             name: "ResendMailboxBarTests",

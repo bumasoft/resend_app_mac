@@ -17,15 +17,18 @@ struct ResendMailboxBarApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        WindowGroup("Mailbox", id: WindowID.main) {
+        WindowGroup("Resend Mailbox", id: WindowID.main) {
             InboxView(appState: appState)
         }
         .defaultSize(width: 1100, height: 700)
+        .windowToolbarStyle(.unified(showsTitle: false))
 
-        WindowGroup("Compose", id: WindowID.compose) {
+        WindowGroup("New Message", id: WindowID.compose) {
             ComposeView(appState: appState)
         }
-        .defaultSize(width: 720, height: 760)
+        .defaultSize(width: 720, height: 620)
+        .windowToolbarStyle(.unified(showsTitle: false))
+        .windowResizability(.contentMinSize)
 
         Settings {
             MailboxSettingsView(appState: appState)

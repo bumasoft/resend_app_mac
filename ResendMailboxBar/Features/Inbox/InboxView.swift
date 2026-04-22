@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct InboxView: View {
@@ -11,15 +12,22 @@ struct InboxView: View {
                 emailList
             }
             .padding(16)
-            .navigationTitle("Resend Mailbox")
+            .navigationTitle(mailboxWindowTitle)
             .navigationSplitViewColumnWidth(min: 310, ideal: 360, max: 430)
         } detail: {
             EmailDetailView(appState: appState)
                 .navigationSplitViewColumnWidth(min: 640, ideal: 860)
         }
         .navigationSplitViewStyle(.balanced)
+        .background(WindowTitleUpdater(title: mailboxWindowTitle))
         .frame(minWidth: 1120, minHeight: 720)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(mailboxWindowTitle)
+                    .font(.headline)
+                    .lineLimit(1)
+            }
+
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     appState.prepareNewDraft()
@@ -52,9 +60,9 @@ struct InboxView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Mailbox")
+                    Text(mailboxWindowTitle)
                         .font(.title3.weight(.semibold))
-                    Text(appState.selectedMailbox?.name ?? "Choose a mailbox")
+                    Text(mailboxHeaderSubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -168,6 +176,17 @@ struct InboxView: View {
         .background(.background.opacity(0.8), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    private var mailboxWindowTitle: String {
+        appState.selectedMailbox?.name ?? "Resend Mailbox"
+    }
+
+    private var mailboxHeaderSubtitle: String {
+        if appState.selectedMailbox == nil {
+            return "Choose a mailbox"
+        }
+        return appState.selectedFolder.title
+    }
+
     private var mailboxBinding: Binding<UUID?> {
         Binding(
             get: { appState.selectedMailboxID },
@@ -205,6 +224,26 @@ struct InboxView: View {
                 }
             }
         )
+    }
+}
+
+private struct WindowTitleUpdater: NSViewRepresentable {
+    let title: String
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        updateWindowTitle(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        updateWindowTitle(for: nsView)
+    }
+
+    private func updateWindowTitle(for view: NSView) {
+        DispatchQueue.main.async {
+            view.window?.title = title
+        }
     }
 }
 
